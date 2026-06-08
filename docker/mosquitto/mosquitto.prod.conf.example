@@ -1,0 +1,39 @@
+# ════════════════════════════════════════════════════════════
+# Configuração de PRODUÇÃO do Mosquitto (exemplo)
+# ════════════════════════════════════════════════════════════
+# Copie para mosquitto.prod.conf e ajuste antes de implantar.
+# NUNCA use allow_anonymous true em produção.
+
+# ── Autenticação ──────────────────────────────────────────────
+allow_anonymous false
+password_file /mosquitto/config/passwd
+
+# Gere o arquivo de senhas (dentro do container) com:
+#   mosquitto_passwd -c /mosquitto/config/passwd <usuario>
+# Use o mesmo usuário/senha em MQTT_USERNAME / MQTT_PASSWORD do backend.
+
+# ── Listener MQTT sobre TLS (porta 8883) ──────────────────────
+listener 8883
+protocol mqtt
+cafile   /mosquitto/certs/ca.crt
+certfile /mosquitto/certs/server.crt
+keyfile  /mosquitto/certs/server.key
+tls_version tlsv1.2
+require_certificate false
+
+# ── Listener WebSocket seguro (opcional, porta 8084) ──────────
+# listener 8084
+# protocol websockets
+# cafile   /mosquitto/certs/ca.crt
+# certfile /mosquitto/certs/server.crt
+# keyfile  /mosquitto/certs/server.key
+
+# ── Persistência ──────────────────────────────────────────────
+persistence true
+persistence_location /mosquitto/data/
+
+# ── Logging ───────────────────────────────────────────────────
+log_dest stdout
+log_type warning
+log_type error
+connection_messages true

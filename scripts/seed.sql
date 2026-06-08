@@ -63,13 +63,25 @@ INSERT INTO alarm_rules (zone_id, name, condition_type, channel_key, threshold_v
 ON CONFLICT DO NOTHING;
 
 -- ═══════════════════════════════════════════════════
--- USER ADMIN (stub, password = 'admin123' bcrypt hash)
+-- USER ADMIN
 -- ═══════════════════════════════════════════════════
+-- Por segurança, este seed NÃO cria um usuário administrador com senha
+-- padrão. Crie o admin de forma controlada, passando um hash bcrypt gerado
+-- a partir de uma senha forte via variável do psql. Exemplo:
+--
+--   1. Gere o hash (ex.: com o utilitário htpasswd ou um script Go/Node):
+--        htpasswd -bnBC 10 "" 'SUA_SENHA_FORTE' | tr -d ':\n'
+--
+--   2. Rode o seed passando o hash:
+--        psql ... -v admin_password_hash="'<HASH_BCRYPT>'" -f seed.sql
+--
+-- O bloco abaixo só executa quando a variável :admin_password_hash é fornecida.
+\if :{?admin_password_hash}
 INSERT INTO users (id, organization_id, email, name, password_hash) VALUES
-    ('f0000000-0000-0000-0000-000000000001', 'a0000000-0000-0000-0000-000000000001', 'admin@fertirriga.local', 'Administrador', '$2a$10$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LJZdL17lhWy')
+    ('f0000000-0000-0000-0000-000000000001', 'a0000000-0000-0000-0000-000000000001', 'admin@fertirriga.local', 'Administrador', :admin_password_hash)
 ON CONFLICT (email) DO NOTHING;
 
--- Atribuir role admin
-INSERT INTO user_roles (user_id, role_id) 
+INSERT INTO user_roles (user_id, role_id)
 SELECT 'f0000000-0000-0000-0000-000000000001', id FROM roles WHERE name = 'admin'
 ON CONFLICT DO NOTHING;
+\endif

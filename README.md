@@ -65,11 +65,12 @@ Backups são salvos em `backups/` (últimos 30 mantidos automaticamente).
 
 ## Segurança
 
-> ⚠️ **As credenciais deste repositório são apenas para desenvolvimento local.**
+> ⚠️ **As credenciais padrão deste repositório são apenas para desenvolvimento local.**
 
-- O `.env.example` e o `docker-compose.yml` usam credenciais de banco triviais (`fertirriga:fertirriga`) destinadas **exclusivamente a ambiente local**. Em produção, defina segredos fortes via variáveis de ambiente e **nunca** versione o arquivo `.env`.
-- O `scripts/seed.sql` cria um usuário administrador de exemplo (`admin@fertirriga.local` / senha `admin123`) apenas para facilitar o desenvolvimento. **Remova ou troque** essas credenciais antes de qualquer implantação real.
-- O broker MQTT de exemplo aceita conexões anônimas. Em produção, habilite autenticação e TLS.
+- **Validação de produção:** definindo `APP_ENV=production`, o backend **recusa iniciar** com configurações inseguras — credenciais padrão do banco (`fertirriga:fertirriga`), `sslmode=disable`, MQTT sem usuário/senha ou CORS com `localhost`/`*`. Veja `internal/config/config.go`.
+- **Banco de dados:** o `.env.example` e o `docker-compose.yml` usam credenciais triviais destinadas **exclusivamente a ambiente local**. Em produção, defina segredos fortes via variáveis de ambiente e **nunca** versione o arquivo `.env`.
+- **Usuário admin:** o `scripts/seed.sql` **não** cria mais um admin com senha padrão. Forneça um hash bcrypt de uma senha forte via `psql -v admin_password_hash=...` (instruções no próprio arquivo).
+- **MQTT:** o broker de desenvolvimento aceita conexões anônimas. Para produção, use `docker/mosquitto/mosquitto.prod.conf.example` como base — ele habilita autenticação (`password_file`) e TLS (porta 8883). Aponte o backend para `mqtts://` e defina `MQTT_USERNAME`/`MQTT_PASSWORD`.
 
 ## Estrutura
 
