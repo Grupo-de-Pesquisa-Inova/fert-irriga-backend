@@ -1,0 +1,42 @@
+# Binários compilados
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+fertirriga-server
+fertirriga-backend
+/bin/
+/build/
+/dist/
+
+# Testes e cobertura
+*.test
+*.out
+coverage.*
+
+# Variáveis de ambiente (NUNCA versionar segredos)
+.env
+.env.*
+!.env.example
+*.local
+
+# IDE / Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Sistema operacional
+.DS_Store
+Thumbs.db
+
+# Backups locais
+/backups/
+
+# Go vendor
+/vendor/
+
+# Logs
+*.log
