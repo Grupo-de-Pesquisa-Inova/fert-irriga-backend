@@ -4,15 +4,21 @@
 # Copie para mosquitto.prod.conf e ajuste antes de implantar.
 # NUNCA use allow_anonymous true em produção.
 
-# ── Autenticação ──────────────────────────────────────────────
+# ── Autenticação (vale para todos os listeners) ───────────────
 allow_anonymous false
 password_file /mosquitto/config/passwd
 
 # Gere o arquivo de senhas (dentro do container) com:
-#   mosquitto_passwd -c /mosquitto/config/passwd <usuario>
-# Use o mesmo usuário/senha em MQTT_USERNAME / MQTT_PASSWORD do backend.
+#   docker compose -f docker-compose.prod.yml run --rm mosquitto \
+#     mosquitto_passwd -c -b /mosquitto/config/passwd <usuario> <senha>
+# Use o mesmo usuário/senha em MQTT_USERNAME / MQTT_PASSWORD do backend e no ESP32.
 
-# ── Listener MQTT sobre TLS (porta 8883) ──────────────────────
+# ── Listener interno (rede Docker privada) ────────────────────
+# Usado pelo backend Go. Não exponha esta porta na internet.
+listener 1883
+protocol mqtt
+
+# ── Listener MQTT sobre TLS (exposto para o ESP32) ────────────
 listener 8883
 protocol mqtt
 cafile   /mosquitto/certs/ca.crt
@@ -20,13 +26,6 @@ certfile /mosquitto/certs/server.crt
 keyfile  /mosquitto/certs/server.key
 tls_version tlsv1.2
 require_certificate false
-
-# ── Listener WebSocket seguro (opcional, porta 8084) ──────────
-# listener 8084
-# protocol websockets
-# cafile   /mosquitto/certs/ca.crt
-# certfile /mosquitto/certs/server.crt
-# keyfile  /mosquitto/certs/server.key
 
 # ── Persistência ──────────────────────────────────────────────
 persistence true

@@ -1,0 +1,67 @@
+# ════════════════════════════════════════════════════════════
+# Stack de PRODUÇÃO (referência)
+# ════════════════════════════════════════════════════════════
+# Requer um arquivo .env com os segredos (veja .env.prod.example).
+# No Dokploy pode ser usado como serviço "Compose", ou cada peça pode ser
+# implantada separadamente (Postgres gerenciado + apps via Dockerfile).
+#
+# Antes de subir:
+#   1. cp docker/mosquitto/mosquitto.prod.conf.example docker/mosquitto/mosquitto.prod.conf
+#   2. Gere docker/mosquitto/passwd (mosquitto_passwd)
+#   3. Coloque os certificados TLS em docker/mosquitto/certs/
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks: [fertirriga]
+
+  mosquitto:
+    image: eclipse-mosquitto:2
+    restart: unless-stopped
+    ports:
+      - "8883:8883"   # MQTT sobre TLS — exposto para o ESP32 via internet
+    volumes:
+      - ./docker/mosquitto/mosquitto.prod.conf:/mosquitto/config/mosquitto.conf:ro
+      - ./docker/mosquitto/passwd:/mosquitto/config/passwd:ro
+      - ./docker/mosquitto/certs:/mosquitto/certs:ro
+      - mosquitto_data:/mosquitto/data
+    networks: [fertirriga]
+
+  backend:
+    build: .
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      APP_ENV: production
+      PORT: "8080"
+      # Conexão interna (rede Docker privada) — sslmode=disable é aceitável aqui
+      DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}?sslmode=disable
+      # Backend fala com o broker pela rede interna (listener 1883)
+      MQTT_BROKER_URL: mqtt://mosquitto:1883
+      MQTT_USERNAME: ${MQTT_USERNAME}
+      MQTT_PASSWORD: ${MQTT_PASSWORD}
+      CORS_ORIGIN: ${CORS_ORIGIN}
+    networks: [fertirriga]
+    # Exponha via Traefik/Dokploy no domínio da API, ou mantenha interno
+    # (acessível apenas pelo nginx do frontend, que faz o proxy de /api e /ws).
+
+volumes:
+  pgdata:
+  mosquitto_data:
+
+networks:
+  fertirriga:

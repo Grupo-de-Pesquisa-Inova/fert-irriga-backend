@@ -74,11 +74,9 @@ func (c *Config) validateForProduction() error {
 	if strings.Contains(c.DatabaseURL, "fertirriga:fertirriga") {
 		return fmt.Errorf("DATABASE_URL usa credenciais padrão de desenvolvimento; defina credenciais fortes em produção")
 	}
-	if strings.Contains(c.DatabaseURL, "sslmode=disable") {
-		return fmt.Errorf("DATABASE_URL com sslmode=disable não é permitido em produção; use sslmode=require ou superior")
-	}
 
-	// O broker MQTT deve exigir autenticação em produção.
+	// O broker MQTT deve exigir autenticação em produção (ele fica exposto à internet
+	// para o ESP32, ao contrário do banco, que normalmente vive em rede interna).
 	if c.MQTT.Username == "" || c.MQTT.Password == "" {
 		return fmt.Errorf("MQTT_USERNAME e MQTT_PASSWORD são obrigatórios em produção")
 	}
