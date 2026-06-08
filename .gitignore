@@ -19,7 +19,13 @@ coverage.*
 .env
 .env.*
 !.env.example
+!.env.prod.example
 *.local
+
+# Mosquitto: segredos e certificados de produção
+docker/mosquitto/mosquitto.prod.conf
+docker/mosquitto/passwd
+docker/mosquitto/certs/
 
 # IDE / Editor
 .vscode/

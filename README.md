@@ -91,6 +91,55 @@ Backend/
 └── scripts/backup.ps1         # Backup automatizado
 ```
 
+## Deploy em produção (Dokploy)
+
+A arquitetura em produção é:
+
+```
+ESP32 ──mqtts (8883)──► Mosquitto ◄──mqtt (1883, interno)── Backend ──► PostgreSQL
+                                                              ▲
+Frontend (nginx) ──/api e /ws (proxy interno)────────────────┘
+```
+
+O ESP32 fala **apenas** com o broker MQTT (nunca com a API). O backend consome do broker e persiste no Postgres.
+
+### Variáveis de ambiente (produção)
+
+| Variável | Exemplo | Observação |
+|---|---|---|
+| `APP_ENV` | `production` | Ativa a validação de segurança no boot |
+| `DATABASE_URL` | `postgres://user:senha@postgres:5432/fertirriga?sslmode=disable` | `sslmode=disable` ok em rede interna |
+| `MQTT_BROKER_URL` | `mqtt://mosquitto:1883` | Conexão interna do backend ao broker |
+| `MQTT_USERNAME` / `MQTT_PASSWORD` | — | **Obrigatórios** em produção |
+| `CORS_ORIGIN` | `https://app.seu-dominio.com` | Sem `localhost`/`*` |
+
+> Com `APP_ENV=production`, o backend **recusa iniciar** se detectar credenciais padrão do banco, MQTT sem autenticação ou CORS com `localhost`/`*`.
+
+### Passos no Dokploy
+
+1. **PostgreSQL** — crie um banco (Database) no Dokploy ou use o serviço `postgres` do `docker-compose.prod.yml`. Anote host, usuário e senha.
+
+2. **Mosquitto (broker MQTT)** — deploy como Compose ou app Docker:
+   - `cp docker/mosquitto/mosquitto.prod.conf.example docker/mosquitto/mosquitto.prod.conf`
+   - Gere as credenciais: `mosquitto_passwd -c -b docker/mosquitto/passwd <usuario> <senha>`
+   - Coloque os certificados TLS em `docker/mosquitto/certs/` (`ca.crt`, `server.crt`, `server.key`)
+   - **Exponha a porta `8883`** (TCP) ao público — é por onde o ESP32 conecta. No Dokploy, mapeie a porta no serviço (Traefik cuida só de HTTP; MQTT é TCP puro).
+
+3. **Backend** — crie uma Application apontando para este repositório (build via `Dockerfile`). Defina as variáveis da tabela acima. As migrations rodam automaticamente no boot. Healthcheck: `GET /api/v1/health`. Pode ficar interno (acessado só pelo frontend) ou exposto via Traefik num domínio de API.
+
+A stack completa de referência está em [`docker-compose.prod.yml`](./docker-compose.prod.yml) (segredos em `.env`, veja [`.env.prod.example`](./.env.prod.example)).
+
+### Conectando o ESP32
+
+No firmware (`Esp32/sdkconfig.defaults` ou `idf.py menuconfig`):
+
+```ini
+CONFIG_MQTT_BROKER_URL="mqtts://broker.seu-dominio.com:8883"
+CONFIG_DEVICE_ID="esp32-001"
+```
+
+> O firmware atual conecta sem autenticação/TLS. Para o broker de produção (auth + TLS), é necessário adicionar `username`/`password` e o certificado da CA na configuração do cliente MQTT do ESP32 (`Esp32/main/main.c`).
+
 ## Licença
 
 [MIT](./LICENSE) © Grupo de Pesquisa Inova
