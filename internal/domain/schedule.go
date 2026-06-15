@@ -8,9 +8,10 @@ import (
 // Schedule representa um agendamento de irrigação/fertirrigação.
 type Schedule struct {
 	ID              string     `json:"id"`
-	ZoneID          string     `json:"zone_id"`
+	ZoneID          *string    `json:"zone_id,omitempty"`
 	DeviceID        string     `json:"device_id,omitempty"`
 	RecipeID        *string    `json:"recipe_id,omitempty"`
+	ValveNumber     int        `json:"valve_number"`
 	Name            string     `json:"name"`
 	ScheduleType    string     `json:"schedule_type"`
 	CronExpression  string     `json:"cron_expression,omitempty"`

@@ -91,6 +91,11 @@ func main() {
 		})
 	})
 
+	// Estado de conexão publicado pelo ESP32 (online / last-will offline)
+	mqtt.OnStatus(func(deviceID string, payload []byte) {
+		deviceSvc.ProcessStatus(ctx, deviceID, payload)
+	})
+
 	// Consumer de ACK — atualiza comando e broadcast para frontend
 	mqtt.OnAck(func(deviceID string, payload []byte) {
 		var ackData struct {

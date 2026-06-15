@@ -24,6 +24,10 @@ type EmergencyHandler func(deviceID string, payload []byte)
 // AckHandler é chamado quando um ACK de comando é recebido do ESP32.
 type AckHandler func(deviceID string, payload []byte)
 
+// StatusHandler é chamado quando o ESP32 publica seu estado de conexão
+// (`{"estado":"online"|"offline"}`) no tópico de status.
+type StatusHandler func(deviceID string, payload []byte)
+
 // Client encapsula o Eclipse Paho MQTT5 com autopaho para reconexão automática.
 type Client struct {
 	cm                *autopaho.ConnectionManager
@@ -31,6 +35,7 @@ type Client struct {
 	telemetryHandlers []TelemetryHandler
 	emergencyHandlers []EmergencyHandler
 	ackHandlers       []AckHandler
+	statusHandlers    []StatusHandler
 }
 
 // NewClient cria e conecta um client MQTT5 ao broker Mosquitto.
@@ -118,6 +123,13 @@ func (c *Client) OnAck(handler AckHandler) {
 	c.ackHandlers = append(c.ackHandlers, handler)
 }
 
+// OnStatus registra um handler para mensagens de estado de conexão do device.
+func (c *Client) OnStatus(handler StatusHandler) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.statusHandlers = append(c.statusHandlers, handler)
+}
+
 // PublishCommand envia um comando para um device via MQTT5.
 func (c *Client) PublishCommand(ctx context.Context, deviceID string, commandType string, payload []byte) error {
 	topic := fmt.Sprintf("fertirriga/%s/%s", deviceID, commandType)
@@ -163,8 +175,12 @@ func (c *Client) handleMessage(p *paho.Publish) {
 	defer c.mu.RUnlock()
 
 	switch msgType {
-	case "telemetria", "status":
+	case "telemetria":
 		for _, h := range c.telemetryHandlers {
+			h(deviceID, p.Payload)
+		}
+	case "status":
+		for _, h := range c.statusHandlers {
 			h(deviceID, p.Payload)
 		}
 	case "emergencia":

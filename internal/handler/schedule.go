@@ -25,9 +25,12 @@ func (h *ScheduleHandler) Create(w http.ResponseWriter, r *http.Request) {
 		respondError(w, http.StatusBadRequest, "JSON inválido")
 		return
 	}
-	if s.ZoneID == "" || s.Name == "" {
-		respondError(w, http.StatusBadRequest, "zone_id e name são obrigatórios")
+	if s.Name == "" {
+		respondError(w, http.StatusBadRequest, "name é obrigatório")
 		return
+	}
+	if s.ValveNumber < 1 || s.ValveNumber > 4 {
+		s.ValveNumber = 1
 	}
 	if s.ScheduleType == "" {
 		s.ScheduleType = "one_time"
@@ -58,11 +61,13 @@ func (h *ScheduleHandler) Get(w http.ResponseWriter, r *http.Request) {
 
 func (h *ScheduleHandler) List(w http.ResponseWriter, r *http.Request) {
 	zoneID := r.URL.Query().Get("zone_id")
-	if zoneID == "" {
-		respondError(w, http.StatusBadRequest, "query param zone_id é obrigatório")
-		return
+	var schedules []domain.Schedule
+	var err error
+	if zoneID != "" {
+		schedules, err = h.repo.ListByZone(r.Context(), zoneID)
+	} else {
+		schedules, err = h.repo.ListAll(r.Context())
 	}
-	schedules, err := h.repo.ListByZone(r.Context(), zoneID)
 	if err != nil {
 		respondError(w, http.StatusInternalServerError, err.Error())
 		return

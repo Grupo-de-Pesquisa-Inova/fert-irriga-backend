@@ -67,6 +67,26 @@ func (s *DeviceService) ProcessTelemetry(ctx context.Context, deviceID string, r
 		"temp", rec.TemperaturaC, "umid", rec.UmidadePct)
 }
 
+// ProcessStatus trata a mensagem de estado de conexão publicada pelo ESP32
+// (`{"estado":"online"|"offline"}`). Atualiza apenas o status do device, sem
+// gravar telemetria nem sobrescrever o payload de sensores.
+func (s *DeviceService) ProcessStatus(ctx context.Context, deviceID string, raw []byte) {
+	var msg struct {
+		Estado string `json:"estado"`
+	}
+	if err := json.Unmarshal(raw, &msg); err != nil {
+		slog.Warn("status MQTT inválido", "device", deviceID, "error", err)
+		return
+	}
+
+	online := msg.Estado == "online"
+	if err := s.deviceRepo.SetOnlineStatus(ctx, deviceID, online); err != nil {
+		slog.Error("erro ao atualizar status do device", "device", deviceID, "error", err)
+		return
+	}
+	slog.Info("status do device atualizado via MQTT", "device", deviceID, "estado", msg.Estado)
+}
+
 // GetDevice retorna o estado atual de um device.
 func (s *DeviceService) GetDevice(ctx context.Context, deviceID string) (*domain.Device, error) {
 	return s.deviceRepo.GetByDeviceID(ctx, deviceID)

@@ -20,20 +20,20 @@ func NewScheduleRepo(pool *pgxpool.Pool) *ScheduleRepo {
 
 func (r *ScheduleRepo) Create(ctx context.Context, s *domain.Schedule) error {
 	return r.pool.QueryRow(ctx, `
-		INSERT INTO schedules (zone_id, recipe_id, name, schedule_type, cron_expression, start_at, start_window_min, duration_sec, origin, is_enabled, version, next_execution_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+		INSERT INTO schedules (zone_id, recipe_id, valve_number, name, schedule_type, cron_expression, start_at, start_window_min, duration_sec, origin, is_enabled, version, next_execution_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
 		RETURNING id, created_at, updated_at
-	`, s.ZoneID, s.RecipeID, s.Name, s.ScheduleType, s.CronExpression, s.StartAt, s.StartWindowMin, s.DurationSec, s.Origin, s.IsEnabled, s.Version, s.NextExecutionAt,
+	`, s.ZoneID, s.RecipeID, s.ValveNumber, s.Name, s.ScheduleType, s.CronExpression, s.StartAt, s.StartWindowMin, s.DurationSec, s.Origin, s.IsEnabled, s.Version, s.NextExecutionAt,
 	).Scan(&s.ID, &s.CreatedAt, &s.UpdatedAt)
 }
 
 func (r *ScheduleRepo) Get(ctx context.Context, id string) (*domain.Schedule, error) {
 	var s domain.Schedule
 	err := r.pool.QueryRow(ctx, `
-		SELECT id, zone_id, recipe_id, name, schedule_type, cron_expression, start_at, start_window_min, duration_sec,
+		SELECT id, zone_id, recipe_id, valve_number, name, schedule_type, cron_expression, start_at, start_window_min, duration_sec,
 			   origin, is_enabled, version, next_execution_at, created_at, updated_at, deleted_at
 		FROM schedules WHERE id = $1 AND deleted_at IS NULL
-	`, id).Scan(&s.ID, &s.ZoneID, &s.RecipeID, &s.Name, &s.ScheduleType, &s.CronExpression, &s.StartAt, &s.StartWindowMin, &s.DurationSec,
+	`, id).Scan(&s.ID, &s.ZoneID, &s.RecipeID, &s.ValveNumber, &s.Name, &s.ScheduleType, &s.CronExpression, &s.StartAt, &s.StartWindowMin, &s.DurationSec,
 		&s.Origin, &s.IsEnabled, &s.Version, &s.NextExecutionAt, &s.CreatedAt, &s.UpdatedAt, &s.DeletedAt)
 	if err != nil {
 		return nil, fmt.Errorf("schedule %s não encontrado: %w", id, err)
@@ -43,7 +43,7 @@ func (r *ScheduleRepo) Get(ctx context.Context, id string) (*domain.Schedule, er
 
 func (r *ScheduleRepo) ListByZone(ctx context.Context, zoneID string) ([]domain.Schedule, error) {
 	rows, err := r.pool.Query(ctx, `
-		SELECT id, zone_id, recipe_id, name, schedule_type, cron_expression, start_at, start_window_min, duration_sec,
+		SELECT id, zone_id, recipe_id, valve_number, name, schedule_type, cron_expression, start_at, start_window_min, duration_sec,
 			   origin, is_enabled, version, next_execution_at, created_at, updated_at, deleted_at
 		FROM schedules WHERE zone_id = $1 AND deleted_at IS NULL ORDER BY created_at DESC
 	`, zoneID)
@@ -55,7 +55,30 @@ func (r *ScheduleRepo) ListByZone(ctx context.Context, zoneID string) ([]domain.
 	schedules := []domain.Schedule{}
 	for rows.Next() {
 		var s domain.Schedule
-		if err := rows.Scan(&s.ID, &s.ZoneID, &s.RecipeID, &s.Name, &s.ScheduleType, &s.CronExpression, &s.StartAt, &s.StartWindowMin, &s.DurationSec,
+		if err := rows.Scan(&s.ID, &s.ZoneID, &s.RecipeID, &s.ValveNumber, &s.Name, &s.ScheduleType, &s.CronExpression, &s.StartAt, &s.StartWindowMin, &s.DurationSec,
+			&s.Origin, &s.IsEnabled, &s.Version, &s.NextExecutionAt, &s.CreatedAt, &s.UpdatedAt, &s.DeletedAt); err != nil {
+			return nil, err
+		}
+		schedules = append(schedules, s)
+	}
+	return schedules, nil
+}
+
+func (r *ScheduleRepo) ListAll(ctx context.Context) ([]domain.Schedule, error) {
+	rows, err := r.pool.Query(ctx, `
+		SELECT id, zone_id, recipe_id, valve_number, name, schedule_type, cron_expression, start_at, start_window_min, duration_sec,
+			   origin, is_enabled, version, next_execution_at, created_at, updated_at, deleted_at
+		FROM schedules WHERE deleted_at IS NULL ORDER BY created_at DESC
+	`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	schedules := []domain.Schedule{}
+	for rows.Next() {
+		var s domain.Schedule
+		if err := rows.Scan(&s.ID, &s.ZoneID, &s.RecipeID, &s.ValveNumber, &s.Name, &s.ScheduleType, &s.CronExpression, &s.StartAt, &s.StartWindowMin, &s.DurationSec,
 			&s.Origin, &s.IsEnabled, &s.Version, &s.NextExecutionAt, &s.CreatedAt, &s.UpdatedAt, &s.DeletedAt); err != nil {
 			return nil, err
 		}
@@ -67,9 +90,9 @@ func (r *ScheduleRepo) ListByZone(ctx context.Context, zoneID string) ([]domain.
 func (r *ScheduleRepo) Update(ctx context.Context, s *domain.Schedule) error {
 	_, err := r.pool.Exec(ctx, `
 		UPDATE schedules SET name = $1, schedule_type = $2, cron_expression = $3, start_at = $4, start_window_min = $5,
-			   duration_sec = $6, is_enabled = $7, version = version + 1, next_execution_at = $8, updated_at = NOW()
-		WHERE id = $9 AND deleted_at IS NULL
-	`, s.Name, s.ScheduleType, s.CronExpression, s.StartAt, s.StartWindowMin, s.DurationSec, s.IsEnabled, s.NextExecutionAt, s.ID)
+			   duration_sec = $6, valve_number = $7, is_enabled = $8, version = version + 1, next_execution_at = $9, updated_at = NOW()
+		WHERE id = $10 AND deleted_at IS NULL
+	`, s.Name, s.ScheduleType, s.CronExpression, s.StartAt, s.StartWindowMin, s.DurationSec, s.ValveNumber, s.IsEnabled, s.NextExecutionAt, s.ID)
 	return err
 }
 
@@ -86,7 +109,7 @@ func (r *ScheduleRepo) Delete(ctx context.Context, id string) error {
 // GetDueSchedules retorna schedules que devem ser executados agora.
 func (r *ScheduleRepo) GetDueSchedules(ctx context.Context) ([]domain.Schedule, error) {
 	rows, err := r.pool.Query(ctx, `
-		SELECT id, zone_id, recipe_id, name, schedule_type, cron_expression, start_at, start_window_min, duration_sec,
+		SELECT id, zone_id, recipe_id, valve_number, name, schedule_type, cron_expression, start_at, start_window_min, duration_sec,
 			   origin, is_enabled, version, next_execution_at, created_at, updated_at, deleted_at
 		FROM schedules
 		WHERE is_enabled = true AND deleted_at IS NULL AND next_execution_at <= NOW()
@@ -100,7 +123,7 @@ func (r *ScheduleRepo) GetDueSchedules(ctx context.Context) ([]domain.Schedule, 
 	schedules := []domain.Schedule{}
 	for rows.Next() {
 		var s domain.Schedule
-		if err := rows.Scan(&s.ID, &s.ZoneID, &s.RecipeID, &s.Name, &s.ScheduleType, &s.CronExpression, &s.StartAt, &s.StartWindowMin, &s.DurationSec,
+		if err := rows.Scan(&s.ID, &s.ZoneID, &s.RecipeID, &s.ValveNumber, &s.Name, &s.ScheduleType, &s.CronExpression, &s.StartAt, &s.StartWindowMin, &s.DurationSec,
 			&s.Origin, &s.IsEnabled, &s.Version, &s.NextExecutionAt, &s.CreatedAt, &s.UpdatedAt, &s.DeletedAt); err != nil {
 			return nil, err
 		}
