@@ -41,12 +41,13 @@ services:
         connection_messages true
         CONF
 
-        # Gerar arquivo de senhas
-        mosquitto_passwd -c -b /mosquitto/config/passwd ${MQTT_USERNAME} ${MQTT_PASSWORD}
+        # Gerar arquivo de senhas (idempotente: remove residual antes de recriar)
+        rm -f /mosquitto/config/passwd /mosquitto/config/passwd.tmp
+        mosquitto_passwd -b -c /mosquitto/config/passwd ${MQTT_USERNAME} ${MQTT_PASSWORD}
         chown -R mosquitto:mosquitto /mosquitto
-        
-        # Iniciar mosquitto como user mosquitto
-        exec su-exec mosquitto mosquitto -c /mosquitto/config/mosquitto.conf
+
+        # Iniciar mosquitto (roda como root e dropa para o user mosquitto automaticamente)
+        exec mosquitto -c /mosquitto/config/mosquitto.conf
     environment:
       MQTT_USERNAME: ${MQTT_USERNAME}
       MQTT_PASSWORD: ${MQTT_PASSWORD}
