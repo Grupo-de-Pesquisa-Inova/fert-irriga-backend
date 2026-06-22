@@ -25,15 +25,25 @@ services:
     command:
       - -c
       - |
-        if [ ! -f /mosquitto/passwd/passwd ]; then
-          mkdir -p /mosquitto/passwd
-          mosquitto_passwd -c -b /mosquitto/passwd/passwd ${MQTT_USERNAME} ${MQTT_PASSWORD}
-          echo "Arquivo de senhas MQTT criado com sucesso"
-        else
-          echo "Arquivo de senhas MQTT ja existe, pulando..."
-        fi
+        # Gerar mosquitto.conf
+        cat > /mosquitto/config/mosquitto.conf <<'EOF'
+        allow_anonymous false
+        password_file /mosquitto/config/passwd
+        listener 1883
+        protocol mqtt
+        persistence true
+        persistence_location /mosquitto/data/
+        log_dest stdout
+        log_type warning
+        log_type error
+        connection_messages true
+        EOF
+
+        # Gerar arquivo de senhas
+        mosquitto_passwd -c -b /mosquitto/config/passwd ${MQTT_USERNAME} ${MQTT_PASSWORD}
+        echo "Mosquitto configurado com sucesso"
     volumes:
-      - mosquitto_passwd:/mosquitto/passwd
+      - mosquitto_config:/mosquitto/config
     networks: [fertirriga]
 
   mosquitto:
@@ -43,8 +53,7 @@ services:
       mosquitto-init:
         condition: service_completed_successfully
     volumes:
-      - ./docker/mosquitto/mosquitto.prod.conf:/mosquitto/config/mosquitto.conf:ro
-      - mosquitto_passwd:/mosquitto/passwd
+      - mosquitto_config:/mosquitto/config
       - mosquitto_data:/mosquitto/data
     networks: [fertirriga]
 
@@ -72,7 +81,7 @@ services:
 volumes:
   pgdata:
   mosquitto_data:
-  mosquitto_passwd:
+  mosquitto_config:
 
 networks:
   fertirriga:
