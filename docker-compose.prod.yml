@@ -1,7 +1,6 @@
 # ════════════════════════════════════════════════════════════
 # Stack de PRODUÇÃO — Dokploy (Compose)
 # ════════════════════════════════════════════════════════════
-# Configure as variáveis de ambiente no Dokploy (Environment).
 
 services:
   postgres:
@@ -20,31 +19,33 @@ services:
       retries: 5
     networks: [fertirriga]
 
-  mosquitto:
-    image: eclipse-mosquitto:2
-    restart: unless-stopped
-    volumes:
-      - ./docker/mosquitto/mosquitto.prod.conf:/mosquitto/config/mosquitto.conf:ro
-      - mosquitto_passwd:/mosquitto/config
-      - mosquitto_data:/mosquitto/data
-    networks: [fertirriga]
-    # Gerar o arquivo de senha no primeiro deploy (ver README)
-    # Porta 1883 é interna — não exposta na internet
-
   mosquitto-init:
     image: eclipse-mosquitto:2
     entrypoint: /bin/sh
     command:
       - -c
       - |
-        if [ ! -f /mosquitto/config/passwd ]; then
-          mosquitto_passwd -c -b /mosquitto/config/passwd ${MQTT_USERNAME} ${MQTT_PASSWORD}
+        if [ ! -f /mosquitto/passwd/passwd ]; then
+          mkdir -p /mosquitto/passwd
+          mosquitto_passwd -c -b /mosquitto/passwd/passwd ${MQTT_USERNAME} ${MQTT_PASSWORD}
           echo "Arquivo de senhas MQTT criado com sucesso"
         else
           echo "Arquivo de senhas MQTT ja existe, pulando..."
         fi
     volumes:
-      - mosquitto_passwd:/mosquitto/config
+      - mosquitto_passwd:/mosquitto/passwd
+    networks: [fertirriga]
+
+  mosquitto:
+    image: eclipse-mosquitto:2
+    restart: unless-stopped
+    depends_on:
+      mosquitto-init:
+        condition: service_completed_successfully
+    volumes:
+      - ./docker/mosquitto/mosquitto.prod.conf:/mosquitto/config/mosquitto.conf:ro
+      - mosquitto_passwd:/mosquitto/passwd
+      - mosquitto_data:/mosquitto/data
     networks: [fertirriga]
 
   backend:
@@ -53,8 +54,8 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
-      mosquitto-init:
-        condition: service_completed_successfully
+      mosquitto:
+        condition: service_started
     environment:
       APP_ENV: production
       PORT: "8080"
