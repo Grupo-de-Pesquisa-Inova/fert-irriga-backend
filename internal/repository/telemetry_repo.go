@@ -20,11 +20,16 @@ func NewTelemetryRepo(pool *pgxpool.Pool) *TelemetryRepo {
 }
 
 // Insert persiste um ponto de telemetria.
+//
+// ON CONFLICT DO NOTHING torna a ingestão idempotente: ao reenviar a fila
+// offline do ESP32 (store-and-forward), registros duplicados — mesma
+// (device_id, recorded_at) — são ignorados em vez de duplicar dados.
 func (r *TelemetryRepo) Insert(ctx context.Context, rec *domain.TelemetryRecord) error {
 	_, err := r.pool.Exec(ctx, `
 		INSERT INTO telemetry (device_id, temperatura_c, umidade_pct, pressao_hpa,
 			fluxo_detectado, vazao_lpm, sinal_wifi_dbm, recorded_at)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+		ON CONFLICT (device_id, recorded_at) DO NOTHING
 	`, rec.DeviceID, rec.TemperaturaC, rec.UmidadePct, rec.PressaoHPA,
 		rec.FluxoDetectado, rec.VazaoLPM, rec.SinalWifiDBM, rec.RecordedAt)
 

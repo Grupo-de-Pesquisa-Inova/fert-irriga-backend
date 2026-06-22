@@ -28,6 +28,10 @@ type AckHandler func(deviceID string, payload []byte)
 // (`{"estado":"online"|"offline"}`) no tópico de status.
 type StatusHandler func(deviceID string, payload []byte)
 
+// EventHandler é chamado quando o ESP32 publica um evento (ação manual,
+// disparo de agendamento, emergência) — inclusive em lote ao reconectar.
+type EventHandler func(deviceID string, payload []byte)
+
 // Client encapsula o Eclipse Paho MQTT5 com autopaho para reconexão automática.
 type Client struct {
 	cm                *autopaho.ConnectionManager
@@ -36,6 +40,7 @@ type Client struct {
 	emergencyHandlers []EmergencyHandler
 	ackHandlers       []AckHandler
 	statusHandlers    []StatusHandler
+	eventHandlers     []EventHandler
 }
 
 // NewClient cria e conecta um client MQTT5 ao broker Mosquitto.
@@ -63,6 +68,7 @@ func NewClient(ctx context.Context, cfg config.MQTTConfig) (*Client, error) {
 					{Topic: "fertirriga/+/status", QoS: 1},
 					{Topic: "fertirriga/+/emergencia", QoS: 2},
 					{Topic: "fertirriga/+/ack", QoS: 1},
+					{Topic: "fertirriga/+/evento", QoS: 1},
 				},
 			}); err != nil {
 				slog.Error("falha ao subscrever tópicos MQTT", "error", err)
@@ -130,6 +136,13 @@ func (c *Client) OnStatus(handler StatusHandler) {
 	c.statusHandlers = append(c.statusHandlers, handler)
 }
 
+// OnEvent registra um handler para eventos publicados pelo ESP32.
+func (c *Client) OnEvent(handler EventHandler) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.eventHandlers = append(c.eventHandlers, handler)
+}
+
 // PublishCommand envia um comando para um device via MQTT5.
 func (c *Client) PublishCommand(ctx context.Context, deviceID string, commandType string, payload []byte) error {
 	topic := fmt.Sprintf("fertirriga/%s/%s", deviceID, commandType)
@@ -139,9 +152,14 @@ func (c *Client) PublishCommand(ctx context.Context, deviceID string, commandTyp
 		qos = 2
 	}
 
+	// Agendamento é retido: o ESP recebe a versão mais recente assim que
+	// (re)assina o tópico, mesmo que tenha ficado offline durante a mudança.
+	retain := commandType == "agendamento"
+
 	_, err := c.cm.Publish(ctx, &paho.Publish{
 		Topic:   topic,
 		QoS:     qos,
+		Retain:  retain,
 		Payload: payload,
 	})
 
@@ -189,6 +207,10 @@ func (c *Client) handleMessage(p *paho.Publish) {
 		}
 	case "ack":
 		for _, h := range c.ackHandlers {
+			h(deviceID, p.Payload)
+		}
+	case "evento":
+		for _, h := range c.eventHandlers {
 			h(deviceID, p.Payload)
 		}
 	}

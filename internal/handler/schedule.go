@@ -1,22 +1,43 @@
 package handler
 
 import (
+	"context"
 	"encoding/json"
+	"log/slog"
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
 
 	"fertirriga-backend/internal/domain"
 	"fertirriga-backend/internal/repository"
+	"fertirriga-backend/internal/service"
 )
 
 type ScheduleHandler struct {
 	repo      *repository.ScheduleRepo
 	auditRepo *repository.AuditRepo
+	deviceSvc *service.DeviceService
+	deviceID  string
 }
 
-func NewScheduleHandler(repo *repository.ScheduleRepo, auditRepo *repository.AuditRepo) *ScheduleHandler {
-	return &ScheduleHandler{repo: repo, auditRepo: auditRepo}
+func NewScheduleHandler(repo *repository.ScheduleRepo, auditRepo *repository.AuditRepo, deviceSvc *service.DeviceService, deviceID string) *ScheduleHandler {
+	return &ScheduleHandler{repo: repo, auditRepo: auditRepo, deviceSvc: deviceSvc, deviceID: deviceID}
+}
+
+// syncToDevice empurra a lista atual de agendamentos para o ESP32 executar
+// localmente. Chamado após qualquer mudança (criar/editar/excluir/ativar).
+func (h *ScheduleHandler) syncToDevice(ctx context.Context) {
+	if h.deviceSvc == nil {
+		return
+	}
+	schedules, err := h.repo.ListAll(ctx)
+	if err != nil {
+		slog.Warn("erro ao listar agendamentos para sincronizar com o ESP", "error", err)
+		return
+	}
+	if err := h.deviceSvc.SyncSchedules(ctx, h.deviceID, schedules); err != nil {
+		slog.Warn("erro ao sincronizar agendamentos com o ESP", "error", err)
+	}
 }
 
 func (h *ScheduleHandler) Create(w http.ResponseWriter, r *http.Request) {
@@ -46,6 +67,7 @@ func (h *ScheduleHandler) Create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	h.auditRepo.AuditLog(r.Context(), "schedule_created", "system", "schedule", s.ID, s)
+	h.syncToDevice(r.Context())
 	respondJSON(w, http.StatusCreated, s)
 }
 
@@ -88,6 +110,7 @@ func (h *ScheduleHandler) Update(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	h.auditRepo.AuditLog(r.Context(), "schedule_updated", "system", "schedule", id, s)
+	h.syncToDevice(r.Context())
 	respondJSON(w, http.StatusOK, s)
 }
 
@@ -98,6 +121,7 @@ func (h *ScheduleHandler) Delete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	h.auditRepo.AuditLog(r.Context(), "schedule_deleted", "system", "schedule", id, nil)
+	h.syncToDevice(r.Context())
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -108,6 +132,7 @@ func (h *ScheduleHandler) Enable(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	h.auditRepo.AuditLog(r.Context(), "schedule_enabled", "system", "schedule", id, nil)
+	h.syncToDevice(r.Context())
 	respondJSON(w, http.StatusOK, map[string]string{"status": "enabled"})
 }
 
@@ -118,6 +143,7 @@ func (h *ScheduleHandler) Disable(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	h.auditRepo.AuditLog(r.Context(), "schedule_disabled", "system", "schedule", id, nil)
+	h.syncToDevice(r.Context())
 	respondJSON(w, http.StatusOK, map[string]string{"status": "disabled"})
 }
 

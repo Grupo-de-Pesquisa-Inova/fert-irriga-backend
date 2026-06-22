@@ -96,6 +96,31 @@ func main() {
 		deviceSvc.ProcessStatus(ctx, deviceID, payload)
 	})
 
+	// Eventos do ESP32 (ações manuais, disparos de agendamento, emergência) —
+	// chegam também em lote no flush da fila offline. Vão para a auditoria.
+	mqtt.OnEvent(func(deviceID string, payload []byte) {
+		var evt struct {
+			EID    string `json:"eid"`
+			Ts     int64  `json:"ts"`
+			Tipo   string `json:"tipo"`
+			Origem string `json:"origem"`
+			Alvo   string `json:"alvo"`
+			Estado bool   `json:"estado"`
+		}
+		if err := json.Unmarshal(payload, &evt); err != nil {
+			slog.Warn("[EVENTO] payload inválido", "device", deviceID, "error", err)
+			return
+		}
+		auditRepo.AuditLog(ctx, "esp_"+evt.Tipo, "device:"+deviceID+"/"+evt.Origem, "device", deviceID, json.RawMessage(payload))
+		wsHub.BroadcastEvent("device_event", map[string]interface{}{
+			"device_id": deviceID,
+			"tipo":      evt.Tipo,
+			"origem":    evt.Origem,
+			"alvo":      evt.Alvo,
+			"estado":    evt.Estado,
+		})
+	})
+
 	// Consumer de ACK — atualiza comando e broadcast para frontend
 	mqtt.OnAck(func(deviceID string, payload []byte) {
 		var ackData struct {
@@ -152,7 +177,7 @@ func main() {
 	defer healthWorker.Stop()
 
 	// Inicializar handlers
-	scheduleHandler := handler.NewScheduleHandler(scheduleRepo, auditRepo)
+	scheduleHandler := handler.NewScheduleHandler(scheduleRepo, auditRepo, deviceSvc, "esp32-001")
 	commandHandler := handler.NewCommandHandler(commandRepo, auditRepo, safetyEngine, mqtt, wsHub)
 	alarmHandler := handler.NewAlarmHandler(alarmRepo, auditRepo)
 	auditHandler := handler.NewAuditHandler(auditRepo)

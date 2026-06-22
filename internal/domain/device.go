@@ -4,6 +4,10 @@ import "time"
 
 // PayloadESP32 espelha a interface IPayloadESP32 do frontend TypeScript.
 type PayloadESP32 struct {
+	// Ts é o epoch UTC (segundos) do RTC do ESP32. Permite store-and-forward:
+	// telemetria atrasada (enviada após uma queda de internet) preserva o
+	// horário real em que foi coletada. Zero quando ausente.
+	Ts            int64          `json:"ts,omitempty"`
 	StatusSistema SystemStatus   `json:"status_sistema"`
 	Controle      ControlStatus  `json:"controle"`
 	Seguranca     SecurityStatus `json:"seguranca"`
