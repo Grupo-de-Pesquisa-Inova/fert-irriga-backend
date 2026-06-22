@@ -52,6 +52,8 @@ services:
     depends_on:
       mosquitto-init:
         condition: service_completed_successfully
+    ports:
+      - "1883:1883"
     volumes:
       - mosquitto_config:/mosquitto/config
       - mosquitto_data:/mosquitto/data
