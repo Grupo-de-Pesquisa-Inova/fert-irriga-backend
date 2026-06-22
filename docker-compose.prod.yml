@@ -19,17 +19,19 @@ services:
       retries: 5
     networks: [fertirriga]
 
-  mosquitto-init:
+  mosquitto:
     image: eclipse-mosquitto:2
+    restart: unless-stopped
+    user: root
     entrypoint: /bin/sh
     command:
       - -c
       - |
         # Gerar mosquitto.conf
-        cat > /mosquitto/config/mosquitto.conf <<'EOF'
+        cat > /mosquitto/config/mosquitto.conf <<'CONF'
         allow_anonymous false
         password_file /mosquitto/config/passwd
-        listener 1883
+        listener 1883 0.0.0.0
         protocol mqtt
         persistence true
         persistence_location /mosquitto/data/
@@ -37,25 +39,20 @@ services:
         log_type warning
         log_type error
         connection_messages true
-        EOF
+        CONF
 
         # Gerar arquivo de senhas
         mosquitto_passwd -c -b /mosquitto/config/passwd ${MQTT_USERNAME} ${MQTT_PASSWORD}
-        echo "Mosquitto configurado com sucesso"
-    volumes:
-      - mosquitto_config:/mosquitto/config
-    networks: [fertirriga]
-
-  mosquitto:
-    image: eclipse-mosquitto:2
-    restart: unless-stopped
-    depends_on:
-      mosquitto-init:
-        condition: service_completed_successfully
+        chown -R mosquitto:mosquitto /mosquitto
+        
+        # Iniciar mosquitto como user mosquitto
+        exec su-exec mosquitto mosquitto -c /mosquitto/config/mosquitto.conf
+    environment:
+      MQTT_USERNAME: ${MQTT_USERNAME}
+      MQTT_PASSWORD: ${MQTT_PASSWORD}
     ports:
       - "1883:1883"
     volumes:
-      - mosquitto_config:/mosquitto/config
       - mosquitto_data:/mosquitto/data
     networks: [fertirriga]
 
@@ -83,7 +80,6 @@ services:
 volumes:
   pgdata:
   mosquitto_data:
-  mosquitto_config:
 
 networks:
   fertirriga:
