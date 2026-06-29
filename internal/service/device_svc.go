@@ -186,9 +186,12 @@ func (s *DeviceService) SyncSchedules(ctx context.Context, deviceID string, sche
 	return s.mqtt.PublishCommand(ctx, deviceID, "agendamento", payload)
 }
 
-// EmergencyStop aciona parada de emergência via MQTT com QoS 2.
-func (s *DeviceService) EmergencyStop(ctx context.Context, deviceID string) error {
-	payload := []byte(`{"parada_emergencia":true}`)
+// SetEmergency altera a parada de emergência via MQTT com QoS 2.
+func (s *DeviceService) SetEmergency(ctx context.Context, deviceID string, active bool) error {
+	payload, err := json.Marshal(map[string]bool{"parada_emergencia": active})
+	if err != nil {
+		return fmt.Errorf("erro ao serializar emergência: %w", err)
+	}
 
 	cmdLog := &domain.CommandLog{
 		DeviceID:    deviceID,
@@ -200,8 +203,17 @@ func (s *DeviceService) EmergencyStop(ctx context.Context, deviceID string) erro
 		slog.Warn("erro ao logar emergência", "error", err)
 	}
 
-	slog.Warn("PARADA DE EMERGÊNCIA acionada", "device", deviceID)
+	if active {
+		slog.Warn("PARADA DE EMERGÊNCIA acionada", "device", deviceID)
+	} else {
+		slog.Warn("PARADA DE EMERGÊNCIA resetada", "device", deviceID)
+	}
 	return s.mqtt.PublishCommand(ctx, deviceID, "emergencia", payload)
+}
+
+// EmergencyStop aciona parada de emergência via MQTT com QoS 2.
+func (s *DeviceService) EmergencyStop(ctx context.Context, deviceID string) error {
+	return s.SetEmergency(ctx, deviceID, true)
 }
 
 // GetTelemetry retorna histórico de telemetria de um device.

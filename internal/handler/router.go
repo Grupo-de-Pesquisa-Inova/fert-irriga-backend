@@ -68,6 +68,7 @@ func NewRouter(
 			r.Get("/{deviceID}", deviceHandler.GetDevice)
 			r.Post("/{deviceID}/control", deviceHandler.SendControl)
 			r.Post("/{deviceID}/emergency-stop", deviceHandler.EmergencyStop)
+			r.Post("/{deviceID}/emergency-reset", deviceHandler.EmergencyReset)
 			r.Get("/{deviceID}/telemetry", deviceHandler.GetTelemetry)
 			r.Get("/{deviceID}/telemetry/latest", deviceHandler.GetLatestTelemetry)
 			r.Get("/{deviceID}/telemetry/history", deviceHandler.GetTelemetryHistory)
@@ -120,4 +121,3 @@ func NewRouter(
 
 	return r
 }
-

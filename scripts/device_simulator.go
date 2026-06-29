@@ -2,10 +2,11 @@
 // Uso: go run scripts/device_simulator.go -broker tcp://localhost:1883 -device esp32-001
 //
 // Flags de cenário:
-//   -scenario normal    → telemetria normal com variações
-//   -scenario offline   → para de publicar após 30s (simula desconexão)
-//   -scenario emergency → ativa parada de emergência após 20s
-//   -scenario flowfail  → simula falha de fluxo (irrigação ativa sem fluxo)
+//
+//	-scenario normal    → telemetria normal com variações
+//	-scenario offline   → para de publicar após 30s (simula desconexão)
+//	-scenario emergency → ativa parada de emergência após 20s
+//	-scenario flowfail  → simula falha de fluxo (irrigação ativa sem fluxo)
 package main
 
 import (
@@ -20,6 +21,7 @@ import (
 	"os"
 	"os/signal"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -95,6 +97,18 @@ type Seguranca struct {
 	ParadaEmergencia bool `json:"parada_emergencia"`
 	AlertaFalhaFluxo bool `json:"alerta_falha_fluxo"`
 }
+
+type OutputState struct {
+	sync.Mutex
+	IrrigacaoConj1 bool
+	IrrigacaoConj2 bool
+	AdubSol1Bag1   bool
+	AdubSol1Bag2   bool
+	AdubSol2Bag1   bool
+	AdubSol2Bag2   bool
+}
+
+var outputs OutputState
 
 func main() {
 	deviceID := flag.String("device", "esp32-001", "Device ID")
@@ -244,6 +258,19 @@ func main() {
 			payload.Controle.Agendamento.Adubacao.Sol2Bag1 = "10:00"
 			payload.Controle.Agendamento.Adubacao.Sol2Bag2 = "10:30"
 
+			outputs.Lock()
+			payload.Controle.Telecomando.Irrigacao.Conjunto1 = outputs.IrrigacaoConj1
+			payload.Controle.Telecomando.Irrigacao.Conjunto2 = outputs.IrrigacaoConj2
+			payload.Controle.Telecomando.Adubacao.Solucao1.Bag1 = outputs.AdubSol1Bag1
+			payload.Controle.Telecomando.Adubacao.Solucao1.Bag2 = outputs.AdubSol1Bag2
+			payload.Controle.Telecomando.Adubacao.Solucao2.Bag1 = outputs.AdubSol2Bag1
+			payload.Controle.Telecomando.Adubacao.Solucao2.Bag2 = outputs.AdubSol2Bag2
+			if outputs.IrrigacaoConj1 || outputs.IrrigacaoConj2 || outputs.AdubSol1Bag1 || outputs.AdubSol1Bag2 || outputs.AdubSol2Bag1 || outputs.AdubSol2Bag2 {
+				payload.StatusSistema.Operacao.ModoAtual = "acionamento manual"
+				payload.StatusSistema.Operacao.SaidasAtivas = activeOutputNames()
+			}
+			outputs.Unlock()
+
 			if flowActive || *scenario == "flowfail" {
 				payload.StatusSistema.Operacao.ModoAtual = "irrigacao agendada"
 				payload.StatusSistema.Operacao.SaidasAtivas = []string{"irrigacao_conj1"}
@@ -293,16 +320,52 @@ func handleCommand(ctx context.Context, cm *autopaho.ConnectionManager, deviceID
 
 	log.Printf("[SIM] 📨 Comando recebido: %s", string(p.Payload))
 
-	// Extrair command_id do payload
 	var cmdPayload struct {
 		CommandID     string `json:"command_id"`
 		Action        string `json:"action"`
 		TargetChannel string `json:"target_channel"`
+		Telecomando   struct {
+			Irrigacao struct {
+				Conjunto1 *bool `json:"conjunto_1"`
+				Conjunto2 *bool `json:"conjunto_2"`
+			} `json:"irrigacao"`
+			Adubacao struct {
+				Solucao1 struct {
+					Bag1 *bool `json:"bag_1"`
+					Bag2 *bool `json:"bag_2"`
+				} `json:"solucao_1"`
+				Solucao2 struct {
+					Bag1 *bool `json:"bag_1"`
+					Bag2 *bool `json:"bag_2"`
+				} `json:"solucao_2"`
+			} `json:"adubacao"`
+		} `json:"telecomando"`
 	}
 	if err := json.Unmarshal(p.Payload, &cmdPayload); err != nil {
 		log.Printf("[SIM] ⚠️  Payload de comando inválido: %v", err)
 		return
 	}
+
+	outputs.Lock()
+	if cmdPayload.Telecomando.Irrigacao.Conjunto1 != nil {
+		outputs.IrrigacaoConj1 = *cmdPayload.Telecomando.Irrigacao.Conjunto1
+	}
+	if cmdPayload.Telecomando.Irrigacao.Conjunto2 != nil {
+		outputs.IrrigacaoConj2 = *cmdPayload.Telecomando.Irrigacao.Conjunto2
+	}
+	if cmdPayload.Telecomando.Adubacao.Solucao1.Bag1 != nil {
+		outputs.AdubSol1Bag1 = *cmdPayload.Telecomando.Adubacao.Solucao1.Bag1
+	}
+	if cmdPayload.Telecomando.Adubacao.Solucao1.Bag2 != nil {
+		outputs.AdubSol1Bag2 = *cmdPayload.Telecomando.Adubacao.Solucao1.Bag2
+	}
+	if cmdPayload.Telecomando.Adubacao.Solucao2.Bag1 != nil {
+		outputs.AdubSol2Bag1 = *cmdPayload.Telecomando.Adubacao.Solucao2.Bag1
+	}
+	if cmdPayload.Telecomando.Adubacao.Solucao2.Bag2 != nil {
+		outputs.AdubSol2Bag2 = *cmdPayload.Telecomando.Adubacao.Solucao2.Bag2
+	}
+	outputs.Unlock()
 
 	// Simular tempo de execução (200-800ms)
 	time.Sleep(time.Duration(200+rand.Intn(600)) * time.Millisecond)
@@ -329,4 +392,27 @@ func handleCommand(ctx context.Context, cm *autopaho.ConnectionManager, deviceID
 	} else {
 		log.Printf("[SIM] ✅ ACK enviado para comando %s (action=%s)", cmdPayload.CommandID, cmdPayload.Action)
 	}
+}
+
+func activeOutputNames() []string {
+	names := []string{}
+	if outputs.IrrigacaoConj1 {
+		names = append(names, "irrigacao_conj1")
+	}
+	if outputs.IrrigacaoConj2 {
+		names = append(names, "irrigacao_conj2")
+	}
+	if outputs.AdubSol1Bag1 {
+		names = append(names, "adubacao_sol1_bag1")
+	}
+	if outputs.AdubSol1Bag2 {
+		names = append(names, "adubacao_sol1_bag2")
+	}
+	if outputs.AdubSol2Bag1 {
+		names = append(names, "adubacao_sol2_bag1")
+	}
+	if outputs.AdubSol2Bag2 {
+		names = append(names, "adubacao_sol2_bag2")
+	}
+	return names
 }

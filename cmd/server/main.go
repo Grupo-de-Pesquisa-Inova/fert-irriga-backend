@@ -131,9 +131,16 @@ func main() {
 			slog.Warn("[ACK] Payload inválido", "error", err)
 			return
 		}
+		if ackData.CommandID == "" {
+			slog.Warn("[ACK] Ignorado sem command_id", "device", deviceID)
+			return
+		}
+		if ackData.Status == "" {
+			ackData.Status = "executed"
+		}
 		slog.Info("[ACK] Recebido", "device", deviceID, "command", ackData.CommandID, "status", ackData.Status)
 
-		if err := commandRepo.MarkAcked(ctx, ackData.CommandID, payload); err != nil {
+		if err := commandRepo.MarkAcked(ctx, ackData.CommandID, ackData.Status, payload); err != nil {
 			slog.Error("[ACK] Erro ao atualizar comando", "error", err)
 			return
 		}
@@ -142,7 +149,7 @@ func main() {
 
 		wsHub.BroadcastEvent("command_status", map[string]interface{}{
 			"command_id": ackData.CommandID,
-			"status":     "executed",
+			"status":     ackData.Status,
 			"device_id":  deviceID,
 		})
 	})

@@ -89,6 +89,23 @@ func (h *DeviceHandler) EmergencyStop(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// EmergencyReset libera a parada de emergência.
+// POST /api/v1/devices/{deviceID}/emergency-reset
+func (h *DeviceHandler) EmergencyReset(w http.ResponseWriter, r *http.Request) {
+	deviceID := chi.URLParam(r, "deviceID")
+
+	if err := h.svc.SetEmergency(r.Context(), deviceID, false); err != nil {
+		writeError(w, http.StatusInternalServerError, "erro ao resetar parada de emergência", err)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]string{
+		"status":  "emergency_reset_sent",
+		"device":  deviceID,
+		"message": "RESET DE EMERGÊNCIA enviado via MQTT QoS 2",
+	})
+}
+
 // GetTelemetry retorna histórico de telemetria em um intervalo.
 // GET /api/v1/devices/{deviceID}/telemetry?from=...&to=...&limit=100
 func (h *DeviceHandler) GetTelemetry(w http.ResponseWriter, r *http.Request) {

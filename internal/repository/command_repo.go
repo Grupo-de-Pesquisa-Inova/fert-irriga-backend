@@ -122,7 +122,10 @@ func (r *CommandRepo) MarkDispatched(ctx context.Context, commandID string) erro
 	return err
 }
 
-func (r *CommandRepo) MarkAcked(ctx context.Context, commandID string, result json.RawMessage) error {
-	_, err := r.pool.Exec(ctx, `UPDATE manual_commands SET status = 'executed', acked_at = NOW(), result = $1 WHERE command_id = $2`, result, commandID)
+func (r *CommandRepo) MarkAcked(ctx context.Context, commandID, status string, result json.RawMessage) error {
+	if status == "" {
+		status = "executed"
+	}
+	_, err := r.pool.Exec(ctx, `UPDATE manual_commands SET status = $1, acked_at = NOW(), result = $2 WHERE command_id = $3`, status, result, commandID)
 	return err
 }
