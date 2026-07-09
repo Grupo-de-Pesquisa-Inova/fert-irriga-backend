@@ -77,15 +77,18 @@ func main() {
 	wsHub := handler.NewWSHub()
 	go wsHub.Run()
 
-	// Conectar telemetria MQTT → WebSocket broadcast
+	// Conectar telemetria MQTT → WebSocket broadcast. O broadcast roda
+	// primeiro para o painel nunca esperar a gravação no Postgres.
 	mqtt.OnTelemetry(func(deviceID string, payload []byte) {
-		deviceSvc.ProcessTelemetry(ctx, deviceID, payload)
 		wsHub.Broadcast(deviceID, payload)
+		deviceSvc.ProcessTelemetry(ctx, deviceID, payload)
 	})
 
 	mqtt.OnEmergency(func(deviceID string, payload []byte) {
 		slog.Warn("EMERGÊNCIA recebida via MQTT", "device", deviceID)
-		wsHub.Broadcast(deviceID, payload)
+		// Não repassar o payload bruto do tópico (formato {"parada_emergencia":bool})
+		// como se fosse telemetria — o BroadcastEvent tipado abaixo já notifica
+		// os clients corretamente.
 		wsHub.BroadcastEvent("emergency", map[string]interface{}{
 			"device_id": deviceID,
 		})
@@ -182,6 +185,10 @@ func main() {
 	healthWorker := worker.NewDeviceHealthWorker(deviceRepo, auditRepo)
 	healthWorker.Start()
 	defer healthWorker.Stop()
+
+	retentionWorker := worker.NewTelemetryRetentionWorker(telemetryRepo)
+	retentionWorker.Start()
+	defer retentionWorker.Stop()
 
 	// Inicializar handlers
 	scheduleHandler := handler.NewScheduleHandler(scheduleRepo, auditRepo, deviceSvc, "esp32-001")

@@ -122,6 +122,16 @@ func (r *TelemetryRepo) GetPage(ctx context.Context, deviceID string, limit, off
 	return records, nil
 }
 
+// DeleteOlderThan apaga registros de telemetria anteriores a cutoff,
+// retornando quantas linhas foram removidas. Usado pela retenção de dados.
+func (r *TelemetryRepo) DeleteOlderThan(ctx context.Context, cutoff time.Time) (int64, error) {
+	tag, err := r.pool.Exec(ctx, `DELETE FROM telemetry WHERE recorded_at < $1`, cutoff)
+	if err != nil {
+		return 0, fmt.Errorf("erro ao apagar telemetria antiga: %w", err)
+	}
+	return tag.RowsAffected(), nil
+}
+
 // GetLatest retorna os últimos N registros de um device.
 func (r *TelemetryRepo) GetLatest(ctx context.Context, deviceID string, limit int) ([]domain.TelemetryRecord, error) {
 	if limit <= 0 || limit > 500 {

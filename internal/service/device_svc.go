@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"sync"
 	"time"
 
 	"fertirriga-backend/internal/domain"
@@ -12,18 +13,27 @@ import (
 	"fertirriga-backend/internal/repository"
 )
 
+// historyWriteThrottle define o intervalo mínimo entre pontos gravados na
+// tabela telemetry (histórico). O streaming ao vivo (WebSocket) não é afetado
+// — só a persistência de longo prazo, para não crescer sem limite.
+const historyWriteThrottle = 15 * time.Minute
+
 // DeviceService contém a lógica de negócio para operações com dispositivos.
 type DeviceService struct {
 	deviceRepo    *repository.DeviceRepo
 	telemetryRepo *repository.TelemetryRepo
 	mqtt          *mqttclient.Client
+
+	historyMu        sync.Mutex
+	lastHistoryWrite map[string]time.Time
 }
 
 func NewDeviceService(dr *repository.DeviceRepo, tr *repository.TelemetryRepo, mqtt *mqttclient.Client) *DeviceService {
 	return &DeviceService{
-		deviceRepo:    dr,
-		telemetryRepo: tr,
-		mqtt:          mqtt,
+		deviceRepo:       dr,
+		telemetryRepo:    tr,
+		mqtt:             mqtt,
+		lastHistoryWrite: make(map[string]time.Time),
 	}
 }
 
@@ -49,19 +59,26 @@ func (s *DeviceService) ProcessTelemetry(ctx context.Context, deviceID string, r
 	// payload velho.
 	isHistorical := payload.Ts > 0 && now.Sub(recordedAt) > 60*time.Second
 
-	// Persistir leitura de sensor
-	rec := &domain.TelemetryRecord{
-		DeviceID:       deviceID,
-		TemperaturaC:   payload.StatusSistema.Sensores.Clima.TemperaturaC,
-		UmidadePct:     payload.StatusSistema.Sensores.Clima.UmidadePct,
-		PressaoHPA:     payload.StatusSistema.Sensores.Clima.PressaoHPA,
-		FluxoDetectado: payload.StatusSistema.Sensores.Hidraulica.FluxoDetectado,
-		VazaoLPM:       payload.StatusSistema.Sensores.Hidraulica.VazaoLPM,
-		SinalWifiDBM:   payload.StatusSistema.Conexao.SinalWifiDBM,
-		RecordedAt:     recordedAt,
-	}
-	if err := s.telemetryRepo.Insert(ctx, rec); err != nil {
-		slog.Error("erro ao persistir telemetria", "device", deviceID, "error", err)
+	// Persistir leitura de sensor no histórico, no máximo 1x a cada
+	// historyWriteThrottle por device — o painel em tempo real é alimentado
+	// via WebSocket e não depende dessa gravação. O throttle só se aplica a
+	// telemetria ao vivo: pontos históricos (flush da fila offline) têm
+	// recordedAt no passado e sempre são gravados — o volume é limitado pelo
+	// tamanho do spool do ESP32, não cresce sem limite como o stream ao vivo.
+	if isHistorical || s.shouldWriteHistory(deviceID, recordedAt) {
+		rec := &domain.TelemetryRecord{
+			DeviceID:       deviceID,
+			TemperaturaC:   payload.StatusSistema.Sensores.Clima.TemperaturaC,
+			UmidadePct:     payload.StatusSistema.Sensores.Clima.UmidadePct,
+			PressaoHPA:     payload.StatusSistema.Sensores.Clima.PressaoHPA,
+			FluxoDetectado: payload.StatusSistema.Sensores.Hidraulica.FluxoDetectado,
+			VazaoLPM:       payload.StatusSistema.Sensores.Hidraulica.VazaoLPM,
+			SinalWifiDBM:   payload.StatusSistema.Conexao.SinalWifiDBM,
+			RecordedAt:     recordedAt,
+		}
+		if err := s.telemetryRepo.Insert(ctx, rec); err != nil {
+			slog.Error("erro ao persistir telemetria", "device", deviceID, "error", err)
+		}
 	}
 
 	if isHistorical {
@@ -82,7 +99,24 @@ func (s *DeviceService) ProcessTelemetry(ctx context.Context, deviceID string, r
 	}
 
 	slog.Debug("telemetria processada", "device", deviceID,
-		"temp", rec.TemperaturaC, "umid", rec.UmidadePct)
+		"temp", payload.StatusSistema.Sensores.Clima.TemperaturaC,
+		"umid", payload.StatusSistema.Sensores.Clima.UmidadePct)
+}
+
+// shouldWriteHistory decide se um ponto de telemetria deve ser persistido no
+// histórico, limitando a gravação a historyWriteThrottle por device. Usa
+// recordedAt (não o horário de processamento) para amostrar corretamente
+// tanto telemetria ao vivo quanto dados históricos vindos da fila offline.
+func (s *DeviceService) shouldWriteHistory(deviceID string, recordedAt time.Time) bool {
+	s.historyMu.Lock()
+	defer s.historyMu.Unlock()
+
+	last, ok := s.lastHistoryWrite[deviceID]
+	if ok && recordedAt.Sub(last) < historyWriteThrottle {
+		return false
+	}
+	s.lastHistoryWrite[deviceID] = recordedAt
+	return true
 }
 
 // ProcessStatus trata a mensagem de estado de conexão publicada pelo ESP32
