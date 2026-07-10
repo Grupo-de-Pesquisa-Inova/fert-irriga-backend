@@ -61,11 +61,12 @@ func (s *DeviceService) ProcessTelemetry(ctx context.Context, deviceID string, r
 
 	// Persistir leitura de sensor no histórico, no máximo 1x a cada
 	// historyWriteThrottle por device — o painel em tempo real é alimentado
-	// via WebSocket e não depende dessa gravação. O throttle só se aplica a
-	// telemetria ao vivo: pontos históricos (flush da fila offline) têm
-	// recordedAt no passado e sempre são gravados — o volume é limitado pelo
-	// tamanho do spool do ESP32, não cresce sem limite como o stream ao vivo.
-	if isHistorical || s.shouldWriteHistory(deviceID, recordedAt) {
+	// via WebSocket e não depende dessa gravação. O throttle se aplica sempre,
+	// inclusive a pontos históricos (flush da fila offline / clock skew do
+	// ESP32): sem isso, qualquer telemetria classificada isHistorical (ex.:
+	// RTC do ESP dessincronizado por mais de 60s) volta a gravar sem limite,
+	// já que praticamente toda mensagem passaria a cair nesse caminho.
+	if s.shouldWriteHistory(deviceID, recordedAt) {
 		rec := &domain.TelemetryRecord{
 			DeviceID:       deviceID,
 			TemperaturaC:   payload.StatusSistema.Sensores.Clima.TemperaturaC,
