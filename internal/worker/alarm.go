@@ -180,6 +180,12 @@ func (e *AlarmEvaluator) evaluateRule(rule domain.AlarmRule, device domain.Devic
 
 	case "emergency":
 		return p.Seguranca.ParadaEmergencia
+
+	case "clock_desync":
+		// Reportado pelo próprio ESP32 quando o RTC nunca sincronizou via NTP
+		// (ou perdeu o sync). Enquanto ativo, toda telemetria é classificada
+		// como histórica no backend e o estado do device para de atualizar.
+		return p.Seguranca.RelogioDessincronizado
 	}
 
 	return false

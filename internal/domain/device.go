@@ -89,8 +89,9 @@ type FertilizationSchedule struct {
 }
 
 type SecurityStatus struct {
-	ParadaEmergencia bool `json:"parada_emergencia"`
-	AlertaFalhaFluxo bool `json:"alerta_falha_fluxo"`
+	ParadaEmergencia       bool `json:"parada_emergencia"`
+	AlertaFalhaFluxo       bool `json:"alerta_falha_fluxo"`
+	RelogioDessincronizado bool `json:"relogio_dessincronizado"`
 }
 
 // Device representa um ESP32 registrado no sistema.
