@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"sync"
@@ -17,6 +18,8 @@ import (
 // tabela telemetry (histórico). O streaming ao vivo (WebSocket) não é afetado
 // — só a persistência de longo prazo, para não crescer sem limite.
 const historyWriteThrottle = 15 * time.Minute
+
+var ErrScenarioControlRequired = errors.New("use a aba Cenários: saídas antigas não representam as válvulas deste controlador")
 
 // DeviceService contém a lógica de negócio para operações com dispositivos.
 type DeviceService struct {
@@ -51,6 +54,10 @@ func (s *DeviceService) ProcessTelemetry(ctx context.Context, deviceID string, r
 	recordedAt := now
 	if payload.Ts > 0 {
 		recordedAt = time.Unix(payload.Ts, 0).UTC()
+	}
+	if recordedAt.After(now.Add(10 * time.Second)) {
+		slog.Warn("telemetria com horário futuro ignorada", "device", deviceID)
+		return
 	}
 
 	// Telemetria é considerada "histórica" (parte de um flush da fila offline)
@@ -152,6 +159,15 @@ func (s *DeviceService) ListDevices(ctx context.Context) ([]domain.Device, error
 
 // SendControl envia um comando de controle ao ESP32 via MQTT.
 func (s *DeviceService) SendControl(ctx context.Context, deviceID string, control domain.ControlStatus) error {
+	device, err := s.deviceRepo.GetByDeviceID(ctx, deviceID)
+	if err != nil {
+		return err
+	}
+	for _, capability := range device.Payload.Capabilities {
+		if capability == "scenarios_v1" || capability == "valves_v1" {
+			return ErrScenarioControlRequired
+		}
+	}
 	payload, err := json.Marshal(control)
 	if err != nil {
 		return fmt.Errorf("erro ao serializar comando: %w", err)

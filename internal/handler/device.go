@@ -2,6 +2,7 @@ package handler
 
 import (
 	"encoding/json"
+	"errors"
 	"log/slog"
 	"net/http"
 	"strconv"
@@ -61,6 +62,10 @@ func (h *DeviceHandler) SendControl(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := h.svc.SendControl(r.Context(), deviceID, control); err != nil {
+		if errors.Is(err, service.ErrScenarioControlRequired) {
+			respondError(w, http.StatusUnprocessableEntity, err.Error())
+			return
+		}
 		writeError(w, http.StatusInternalServerError, "erro ao enviar comando", err)
 		return
 	}

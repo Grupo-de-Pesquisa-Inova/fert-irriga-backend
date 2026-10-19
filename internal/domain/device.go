@@ -4,6 +4,7 @@ import "time"
 
 // PayloadESP32 espelha a interface IPayloadESP32 do frontend TypeScript.
 type PayloadESP32 struct {
+	Capabilities []string `json:"capabilities,omitempty"`
 	// Ts é o epoch UTC (segundos) do RTC do ESP32. Permite store-and-forward:
 	// telemetria atrasada (enviada após uma queda de internet) preserva o
 	// horário real em que foi coletada. Zero quando ausente.
@@ -11,6 +12,15 @@ type PayloadESP32 struct {
 	StatusSistema SystemStatus   `json:"status_sistema"`
 	Controle      ControlStatus  `json:"controle"`
 	Seguranca     SecurityStatus `json:"seguranca"`
+}
+
+// IsCurrent prevents an offline replay from animating the live model as a new state.
+func (p PayloadESP32) IsCurrent(now time.Time) bool {
+	if p.Ts == 0 {
+		return true
+	} // Legacy devices do not include a timestamp.
+	age := now.Sub(time.Unix(p.Ts, 0))
+	return age >= -10*time.Second && age <= 60*time.Second
 }
 
 type SystemStatus struct {

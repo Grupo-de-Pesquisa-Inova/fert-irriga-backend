@@ -49,6 +49,9 @@ func (r *CommandRepo) Create(ctx context.Context, cmd *domain.ManualCommand) err
 }
 
 func (r *CommandRepo) Get(ctx context.Context, id string) (*domain.ManualCommand, error) {
+	if err := r.expireValves(ctx); err != nil {
+		return nil, err
+	}
 	var cmd domain.ManualCommand
 	err := r.pool.QueryRow(ctx, `
 		SELECT id, command_id, device_id, origin, actor, action, target_channel, parameters, status, safety_context, priority,
@@ -77,6 +80,9 @@ func (r *CommandRepo) GetByCommandID(ctx context.Context, commandID string) (*do
 }
 
 func (r *CommandRepo) List(ctx context.Context, deviceID string, limit int) ([]domain.ManualCommand, error) {
+	if err := r.expireValves(ctx); err != nil {
+		return nil, err
+	}
 	if limit <= 0 || limit > 200 {
 		limit = 50
 	}
@@ -118,14 +124,25 @@ func (r *CommandRepo) UpdateStatus(ctx context.Context, commandID, status string
 }
 
 func (r *CommandRepo) MarkDispatched(ctx context.Context, commandID string) error {
-	_, err := r.pool.Exec(ctx, `UPDATE manual_commands SET status = 'dispatched', dispatched_at = NOW() WHERE command_id = $1`, commandID)
+	_, err := r.pool.Exec(ctx, `UPDATE manual_commands SET status = 'dispatched', dispatched_at = NOW() WHERE command_id = $1 AND status = 'pending'`, commandID)
 	return err
 }
 
-func (r *CommandRepo) MarkAcked(ctx context.Context, commandID, status string, result json.RawMessage) error {
+func (r *CommandRepo) MarkAcked(ctx context.Context, deviceID, commandID, status string, result json.RawMessage) error {
 	if status == "" {
 		status = "executed"
 	}
-	_, err := r.pool.Exec(ctx, `UPDATE manual_commands SET status = $1, acked_at = NOW(), result = $2 WHERE command_id = $3`, status, result, commandID)
+	_, err := r.pool.Exec(ctx, `UPDATE manual_commands SET status = $1, acked_at = NOW(), result = $2 WHERE command_id = $3 AND device_id = $4 AND status IN ('pending','dispatched','received','executing','expired')`, status, result, commandID, deviceID)
 	return err
+}
+
+func (r *CommandRepo) expireValves(ctx context.Context) error {
+	_, err := r.pool.Exec(ctx, `UPDATE manual_commands SET status='expired',expired_at=now(),result='{"message":"Sem confirmação do controlador. O comando pode ter sido aplicado; confira a telemetria antes de tentar novamente."}'::jsonb WHERE target_channel IN ('VA','VAD1','VAD2','VG','VL13','VL46','VRA1','VRA2') AND status IN ('pending','dispatched') AND requested_at < now()-interval '20 seconds'`)
+	return err
+}
+
+func (r *CommandRepo) HydraulicBusy(ctx context.Context, device string) (bool, error) {
+	var busy bool
+	err := r.pool.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM scenario_runs WHERE device_id=$1 AND status IN ('pending','running','stopping','uncertain')) OR EXISTS(SELECT 1 FROM manual_commands WHERE device_id=$1 AND status IN ('pending','dispatched','received','executing') AND requested_at > now()-interval '20 seconds')`, device).Scan(&busy)
+	return busy, err
 }

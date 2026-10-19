@@ -17,6 +17,7 @@ import (
 	mqttclient "fertirriga-backend/internal/mqtt"
 	"fertirriga-backend/internal/repository"
 	"fertirriga-backend/internal/safety"
+	"fertirriga-backend/internal/scenario"
 	"fertirriga-backend/internal/scheduler"
 	"fertirriga-backend/internal/service"
 	"fertirriga-backend/internal/worker"
@@ -72,6 +73,8 @@ func main() {
 
 	// Inicializar serviço
 	deviceSvc := service.NewDeviceService(deviceRepo, telemetryRepo, mqtt)
+	scenarios := &scenario.Service{Store: &scenario.Store{Pool: pool}, Devices: deviceRepo, MQTT: mqtt}
+	go scenarios.Run(ctx)
 
 	// Inicializar WebSocket hub
 	wsHub := handler.NewWSHub()
@@ -80,7 +83,13 @@ func main() {
 	// Conectar telemetria MQTT → WebSocket broadcast. O broadcast roda
 	// primeiro para o painel nunca esperar a gravação no Postgres.
 	mqtt.OnTelemetry(func(deviceID string, payload []byte) {
-		wsHub.Broadcast(deviceID, payload)
+		var reading domain.PayloadESP32
+		if json.Unmarshal(payload, &reading) != nil {
+			return
+		}
+		if reading.IsCurrent(time.Now()) {
+			wsHub.Broadcast(deviceID, payload)
+		}
 		deviceSvc.ProcessTelemetry(ctx, deviceID, payload)
 	})
 
@@ -102,6 +111,9 @@ func main() {
 	// Eventos do ESP32 (ações manuais, disparos de agendamento, emergência) —
 	// chegam também em lote no flush da fila offline. Vão para a auditoria.
 	mqtt.OnEvent(func(deviceID string, payload []byte) {
+		if err := scenarios.Store.Outcome(ctx, deviceID, payload); err != nil {
+			slog.Error("cenário: evento inválido", "error", err)
+		}
 		var evt struct {
 			EID    string `json:"eid"`
 			Ts     int64  `json:"ts"`
@@ -126,6 +138,15 @@ func main() {
 
 	// Consumer de ACK — atualiza comando e broadcast para frontend
 	mqtt.OnAck(func(deviceID string, payload []byte) {
+		var scenarioAck struct {
+			RunID string `json:"run_id"`
+		}
+		if json.Unmarshal(payload, &scenarioAck) == nil && scenarioAck.RunID != "" {
+			if err := scenarios.Store.Outcome(ctx, deviceID, payload); err != nil {
+				slog.Error("cenário: ACK inválido", "error", err)
+			}
+			return
+		}
 		var ackData struct {
 			CommandID string `json:"command_id"`
 			Status    string `json:"status"`
@@ -138,12 +159,35 @@ func main() {
 			slog.Warn("[ACK] Ignorado sem command_id", "device", deviceID)
 			return
 		}
+		command, err := commandRepo.GetByCommandID(ctx, ackData.CommandID)
+		if err != nil || command.DeviceID != deviceID {
+			slog.Warn("[ACK] Dispositivo/comando não corresponde", "device", deviceID)
+			return
+		}
+		if command.Status == "executed" || command.Status == "rejected" || command.Status == "failed" || command.Status == "conflicted" {
+			return // QoS retries must not repeat terminal events or their audit records.
+		}
+		if scenario.IsValve(command.TargetChannel) {
+			var valveAck struct {
+				Protocol string `json:"protocol"`
+				Target   string `json:"target"`
+				State    *bool  `json:"state"`
+			}
+			json.Unmarshal(payload, &valveAck)
+			desired := command.Action == "open_valve" || command.Action == "turn_on" || command.Action == "set_on"
+			if valveAck.Protocol != "valves_v1" || valveAck.Target != command.TargetChannel ||
+				(ackData.Status != "executed" && ackData.Status != "rejected" && ackData.Status != "failed") ||
+				(ackData.Status == "executed" && (valveAck.State == nil || *valveAck.State != desired)) {
+				slog.Warn("[ACK] Confirmação inválida da válvula", "device", deviceID)
+				return
+			}
+		}
 		if ackData.Status == "" {
 			ackData.Status = "executed"
 		}
 		slog.Info("[ACK] Recebido", "device", deviceID, "command", ackData.CommandID, "status", ackData.Status)
 
-		if err := commandRepo.MarkAcked(ctx, ackData.CommandID, ackData.Status, payload); err != nil {
+		if err := commandRepo.MarkAcked(ctx, deviceID, ackData.CommandID, ackData.Status, payload); err != nil {
 			slog.Error("[ACK] Erro ao atualizar comando", "error", err)
 			return
 		}
@@ -166,9 +210,7 @@ func main() {
 	safetyEngine := safety.NewEngine(deviceRepo, commandRepo)
 
 	// Inicializar workers
-	schedWorker := worker.NewSchedulerWorker(scheduleRepo, auditRepo)
-	schedWorker.Start()
-	defer schedWorker.Stop()
+	// Legacy schedules belong to the ESP32 RTC. Do not fabricate successful runs on the server.
 
 	alarmEval := worker.NewAlarmEvaluator(alarmRepo, deviceRepo, telemetryRepo, auditRepo)
 	alarmEval.OnAlarm(func(eventType string, rule domain.AlarmRule, deviceID string) {
@@ -197,7 +239,7 @@ func main() {
 	auditHandler := handler.NewAuditHandler(auditRepo)
 
 	// Criar router HTTP
-	router := handler.NewRouter(cfg, deviceSvc, wsHub, scheduleHandler, commandHandler, alarmHandler, auditHandler)
+	router := handler.NewRouter(cfg, deviceSvc, wsHub, scheduleHandler, commandHandler, alarmHandler, auditHandler, scenarios)
 
 	// Iniciar servidor HTTP
 	srv := &http.Server{

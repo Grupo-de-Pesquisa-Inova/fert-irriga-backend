@@ -8,6 +8,7 @@ import (
 	"github.com/go-chi/cors"
 
 	"fertirriga-backend/internal/config"
+	"fertirriga-backend/internal/scenario"
 	"fertirriga-backend/internal/service"
 )
 
@@ -20,6 +21,7 @@ func NewRouter(
 	commandHandler *CommandHandler,
 	alarmHandler *AlarmHandler,
 	auditHandler *AuditHandler,
+	scenarioService *scenario.Service,
 ) http.Handler {
 	r := chi.NewRouter()
 
@@ -46,6 +48,7 @@ func NewRouter(
 
 	// Rotas da API v1
 	r.Route("/api/v1", func(r chi.Router) {
+		scenarioService.Routes(r)
 		// Health check
 		r.Get("/health", func(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("Content-Type", "application/json")

@@ -1,0 +1,265 @@
+[
+  {
+    "id": "cenario-01",
+    "name": "ADUBO 1 → L1–L3",
+    "source": "ad1",
+    "outputs": [
+      "VAD1",
+      "VG",
+      "VL13",
+      "M"
+    ],
+    "groups": [
+      "out_ad1",
+      "hdr_ad1",
+      "suction",
+      "discharge",
+      "vg",
+      "man13"
+    ],
+    "color": [
+      0.15,
+      1.0,
+      0.25
+    ]
+  },
+  {
+    "id": "cenario-02",
+    "name": "ADUBO 1 → L4–L6",
+    "source": "ad1",
+    "outputs": [
+      "VAD1",
+      "VG",
+      "VL46",
+      "M"
+    ],
+    "groups": [
+      "out_ad1",
+      "hdr_ad1",
+      "suction",
+      "discharge",
+      "vg",
+      "man46"
+    ],
+    "color": [
+      0.15,
+      1.0,
+      0.25
+    ]
+  },
+  {
+    "id": "cenario-03",
+    "name": "ADUBO 1 → L1–L6",
+    "source": "ad1",
+    "outputs": [
+      "VAD1",
+      "VG",
+      "VL13",
+      "VL46",
+      "M"
+    ],
+    "groups": [
+      "out_ad1",
+      "hdr_ad1",
+      "suction",
+      "discharge",
+      "vg",
+      "man13",
+      "man46"
+    ],
+    "color": [
+      0.15,
+      1.0,
+      0.25
+    ]
+  },
+  {
+    "id": "cenario-04",
+    "name": "LIMPEZA ADUBO 1 (RETORNO)",
+    "source": "ad1",
+    "outputs": [
+      "VAD1",
+      "VRA1",
+      "M"
+    ],
+    "groups": [
+      "out_ad1",
+      "hdr_ad1",
+      "suction",
+      "discharge",
+      "ret1"
+    ],
+    "color": [
+      0.15,
+      1.0,
+      0.25
+    ]
+  },
+  {
+    "id": "cenario-05",
+    "name": "ADUBO 2 → L1–L3",
+    "source": "ad2",
+    "outputs": [
+      "VAD2",
+      "VG",
+      "VL13",
+      "M"
+    ],
+    "groups": [
+      "out_ad2",
+      "hdr_ad2",
+      "suction",
+      "discharge",
+      "vg",
+      "man13"
+    ],
+    "color": [
+      1.0,
+      0.42,
+      0.04
+    ]
+  },
+  {
+    "id": "cenario-06",
+    "name": "ADUBO 2 → L4–L6",
+    "source": "ad2",
+    "outputs": [
+      "VAD2",
+      "VG",
+      "VL46",
+      "M"
+    ],
+    "groups": [
+      "out_ad2",
+      "hdr_ad2",
+      "suction",
+      "discharge",
+      "vg",
+      "man46"
+    ],
+    "color": [
+      1.0,
+      0.42,
+      0.04
+    ]
+  },
+  {
+    "id": "cenario-07",
+    "name": "ADUBO 2 → L1–L6",
+    "source": "ad2",
+    "outputs": [
+      "VAD2",
+      "VG",
+      "VL13",
+      "VL46",
+      "M"
+    ],
+    "groups": [
+      "out_ad2",
+      "hdr_ad2",
+      "suction",
+      "discharge",
+      "vg",
+      "man13",
+      "man46"
+    ],
+    "color": [
+      1.0,
+      0.42,
+      0.04
+    ]
+  },
+  {
+    "id": "cenario-08",
+    "name": "LIMPEZA ADUBO 2 (RETORNO)",
+    "source": "ad2",
+    "outputs": [
+      "VAD2",
+      "VRA2",
+      "M"
+    ],
+    "groups": [
+      "out_ad2",
+      "hdr_ad2",
+      "suction",
+      "discharge",
+      "ret2"
+    ],
+    "color": [
+      1.0,
+      0.42,
+      0.04
+    ]
+  },
+  {
+    "id": "cenario-09",
+    "name": "ÁGUA → L1–L3",
+    "source": "agua",
+    "outputs": [
+      "VA",
+      "VG",
+      "VL13",
+      "M"
+    ],
+    "groups": [
+      "out_agua",
+      "suction",
+      "discharge",
+      "vg",
+      "man13"
+    ],
+    "color": [
+      0.05,
+      0.55,
+      1.0
+    ]
+  },
+  {
+    "id": "cenario-10",
+    "name": "ÁGUA → L4–L6",
+    "source": "agua",
+    "outputs": [
+      "VA",
+      "VG",
+      "VL46",
+      "M"
+    ],
+    "groups": [
+      "out_agua",
+      "suction",
+      "discharge",
+      "vg",
+      "man46"
+    ],
+    "color": [
+      0.05,
+      0.55,
+      1.0
+    ]
+  },
+  {
+    "id": "cenario-11",
+    "name": "ÁGUA → L1–L6",
+    "source": "agua",
+    "outputs": [
+      "VA",
+      "VG",
+      "VL13",
+      "VL46",
+      "M"
+    ],
+    "groups": [
+      "out_agua",
+      "suction",
+      "discharge",
+      "vg",
+      "man13",
+      "man46"
+    ],
+    "color": [
+      0.05,
+      0.55,
+      1.0
+    ]
+  }
+]

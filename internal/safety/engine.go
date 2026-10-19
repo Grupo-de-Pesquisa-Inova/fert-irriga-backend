@@ -2,23 +2,25 @@ package safety
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"time"
 
 	"fertirriga-backend/internal/domain"
 	"fertirriga-backend/internal/repository"
+	"fertirriga-backend/internal/scenario"
 )
 
 // ViolationType identifica o tipo de violação de segurança.
 type ViolationType string
 
 const (
-	ViolationEmergencyActive   ViolationType = "emergency_active"
-	ViolationMaintenanceLock   ViolationType = "maintenance_lock"
-	ViolationMutexConflict     ViolationType = "mutex_conflict"
+	ViolationEmergencyActive    ViolationType = "emergency_active"
+	ViolationMaintenanceLock    ViolationType = "maintenance_lock"
+	ViolationMutexConflict      ViolationType = "mutex_conflict"
 	ViolationMaxRuntimeExceeded ViolationType = "max_runtime_exceeded"
-	ViolationCommTimeout       ViolationType = "comm_timeout"
-	ViolationPriorityBlocked   ViolationType = "priority_blocked"
+	ViolationCommTimeout        ViolationType = "comm_timeout"
+	ViolationPriorityBlocked    ViolationType = "priority_blocked"
 )
 
 // Violation representa uma violação de regra de segurança.
@@ -56,6 +58,28 @@ func (e *Engine) Check(ctx context.Context, cmd *domain.ManualCommand) []Violati
 	}
 
 	// Verificar emergência ativa via payload
+	if scenario.IsValve(cmd.TargetChannel) {
+		var params struct {
+			Expected *bool `json:"expected_state"`
+		}
+		if json.Unmarshal(cmd.Parameters, &params) != nil || params.Expected == nil {
+			return []Violation{{Type: ViolationMutexConflict, Message: "Estado esperado da válvula ausente."}}
+		}
+		state := cmd.Action == "open_valve" || cmd.Action == "turn_on" || cmd.Action == "set_on"
+		if err := scenario.CheckValveDevice(device, cmd.TargetChannel, state, *params.Expected, time.Now()); err != nil {
+			return []Violation{{Type: ViolationMutexConflict, Message: err.Error()}}
+		}
+		busy, err := e.commandRepo.HydraulicBusy(ctx, cmd.DeviceID)
+		if err != nil || busy {
+			return []Violation{{Type: ViolationMutexConflict, Message: "Há uma operação pendente ou não foi possível verificar o controlador. Aguarde a confirmação."}}
+		}
+		return nil
+	}
+	for _, capability := range device.Payload.Capabilities {
+		if capability == "scenarios_v1" || capability == "valves_v1" {
+			violations = append(violations, Violation{Type: ViolationMaintenanceLock, Message: "Use Cenários para este controlador: o mapeamento legado de seis saídas não se aplica."})
+		}
+	}
 	if device.Payload.Seguranca.ParadaEmergencia {
 		violations = append(violations, Violation{
 			Type:    ViolationEmergencyActive,

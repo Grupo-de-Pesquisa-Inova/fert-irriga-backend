@@ -15,6 +15,7 @@ import (
 	mqttclient "fertirriga-backend/internal/mqtt"
 	"fertirriga-backend/internal/repository"
 	"fertirriga-backend/internal/safety"
+	"fertirriga-backend/internal/scenario"
 )
 
 type CommandHandler struct {
@@ -66,6 +67,10 @@ func (h *CommandHandler) Create(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Safety check — avaliar regras antes de despachar
+	if scenario.IsValve(cmd.TargetChannel) && h.safetyEngine == nil {
+		respondError(w, http.StatusServiceUnavailable, "Verificação de segurança indisponível")
+		return
+	}
 	if h.safetyEngine != nil {
 		violations := h.safetyEngine.Check(r.Context(), &cmd)
 		if safety.IsBlocking(violations) {
@@ -74,7 +79,7 @@ func (h *CommandHandler) Create(w http.ResponseWriter, r *http.Request) {
 				"violations": violations,
 			})
 			respondJSON(w, http.StatusUnprocessableEntity, map[string]interface{}{
-				"error":      "Comando bloqueado por regras de segurança",
+				"error":      violations[0].Message,
 				"violations": violations,
 			})
 			return
@@ -83,6 +88,32 @@ func (h *CommandHandler) Create(w http.ResponseWriter, r *http.Request) {
 
 	if err := h.repo.Create(r.Context(), &cmd); err != nil {
 		respondError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if scenario.IsValve(cmd.TargetChannel) {
+		// Publish synchronously, without mutating the response from a goroutine.
+		// Delivery is not execution: only the device ACK confirms the command.
+		if h.mqttClient == nil {
+			h.repo.UpdateStatus(r.Context(), cmd.CommandID, "failed")
+			respondError(w, http.StatusServiceUnavailable, "MQTT indisponível")
+			return
+		}
+		ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+		defer cancel()
+		if err := h.mqttClient.PublishCommand(ctx, cmd.DeviceID, "comando", mqttPayload); err != nil {
+			// A delivery error can happen after the controller received the packet.
+			// Keep it pending until ACK or timeout; never claim it stayed closed.
+			slog.Warn("válvula: envio sem confirmação", "command", cmd.CommandID, "error", err)
+		} else {
+			h.repo.MarkDispatched(ctx, cmd.CommandID)
+		}
+		h.auditRepo.AuditLog(r.Context(), "command_created", cmd.Actor, "command", cmd.CommandID, cmd)
+		current, err := h.repo.Get(r.Context(), cmd.ID)
+		if err != nil {
+			respondError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		respondJSON(w, http.StatusCreated, current)
 		return
 	}
 
@@ -121,6 +152,19 @@ func buildValveCommandPayload(cmd *domain.ManualCommand) ([]byte, error) {
 	desiredState, err := desiredStateForAction(cmd.Action)
 	if err != nil {
 		return nil, err
+	}
+	if scenario.IsValve(cmd.TargetChannel) {
+		var params struct {
+			Expected *bool `json:"expected_state"`
+		}
+		if json.Unmarshal(cmd.Parameters, &params) != nil || params.Expected == nil {
+			return nil, fmt.Errorf("expected_state é obrigatório para a válvula")
+		}
+		return json.Marshal(map[string]interface{}{
+			"protocol": "valves_v1", "command_id": cmd.CommandID, "action": "set_valve",
+			"target": cmd.TargetChannel, "state": desiredState, "expected_state": *params.Expected,
+			"expires_at": time.Now().Add(15 * time.Second).UTC(),
+		})
 	}
 
 	telecomando, err := telecomandoForTarget(cmd.TargetChannel, desiredState)
