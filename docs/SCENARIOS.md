@@ -33,8 +33,8 @@ segura implícita entre estas válvulas e as seis saídas legadas do projeto.
 ## Contrato para o firmware real
 
 Só anunciar `capabilities: ["scenarios_v1"]` na telemetria após implementar os
-intertravamentos e timer abaixo. A versão física do firmware é um projeto separado;
-o código incluído aqui é um simulador sem GPIO. Os comandos legados ficam bloqueados
+intertravamentos e timer abaixo. A versão física está no repositório Fertirriga-Esp32
+(relés de cada saída em `HARDWARE.md`); o código incluído aqui é um simulador sem GPIO. Os comandos legados ficam bloqueados
 para dispositivos que anunciam esta capacidade.
 
 Receber em `fertirriga/{device_id}/cenario`, QoS 1, **sem retain**:
